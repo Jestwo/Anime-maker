@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Ultimate Comic Storyboard — AI Edition</title>
+  <title>Ultimate Comic Storyboard — Local AI Edition</title>
   <style>
     :root{--bg:#0f1724;--panel:#0b1220;--accent:#06b6d4;--ui:#e6eef6}
     html,body{height:100%;margin:0;background:var(--bg);color:var(--ui);font-family:Inter,system-ui,Segoe UI,Roboto,Arial}
@@ -37,7 +37,7 @@
 <body>
   <div class="app">
     <header>
-      <h1>Ultimate Comic Storyboard — AI Edition</h1>
+      <h1>Ultimate Comic Storyboard — Local AI Edition</h1>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
         <button id="downloadAll">Download PNG</button>
         <button id="exportProject">Export .json</button>
@@ -75,7 +75,6 @@
           <label class="muted">AI Generators</label>
           <div class="tool" style="flex-direction:column;gap:4px">
             <input type="text" id="aiPrompt" placeholder="Enter prompt for pose or lineart" />
-            <input type="text" id="apiKey" placeholder="Paste HuggingFace API Key here" />
             <div style="display:flex;gap:4px">
               <button id="generatePose">Generate Pose</button>
               <button id="generateLineart">Generate Lineart</button>
@@ -165,21 +164,25 @@ document.getElementById('clear').addEventListener('click',()=>{ctx.clearRect(0,0
 document.getElementById('downloadAll').addEventListener('click',()=>{const a=document.createElement('a');a.href=canvas.toDataURL();a.download='storyboard.png';a.click();});
 document.getElementById('exportPanelPNGs').addEventListener('click',()=>{if(!panels.length)return alert('No panels');panels.forEach((p,i)=>{const tmp=document.createElement('canvas');tmp.width=p.w;tmp.height=p.h;tmp.getContext('2d').drawImage(canvas,p.x,p.y,p.w,p.h,0,0,p.w,p.h);const a=document.createElement('a');a.href=tmp.toDataURL();a.download=`panel-${i+1}.png`;a.click();});});
 
-// AI Image Generation (Hugging Face SDXL)
+// AI Image Generation (Local HunyuanImage)
 async function generateAI(type){
   const prompt = document.getElementById('aiPrompt').value || type;
-  const key = document.getElementById('apiKey').value.trim();
-  if(!key){addAIAsset(type + ' [placeholder]'); return;}
   try{
     addAIAsset(type + ' [generating...]');
-    const res = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',{method:'POST',headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({inputs:prompt})});
-    const blob = await res.blob();
-    const imgURL = URL.createObjectURL(blob);
-    const img = new Image(); img.onload=()=>{ctx.drawImage(img,0,0,canvas.width,canvas.height); URL.revokeObjectURL(imgURL);}; img.src = imgURL;
-    addAIAsset(type);
+    const res = await fetch('http://127.0.0.1:8000/generate',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({prompt})
+    });
+    const data = await res.json();
+    const img = new Image();
+    img.onload = ()=>{ctx.drawImage(img,0,0,canvas.width,canvas.height);};
+    img.src = data.image;
+    addAIAsset(type + ' [done]');
   }catch(e){console.error(e);addAIAsset(type+' [error]');}
 }
-function addAIAsset(type){const el=document.getElementById('assets');const d=document.createElement('div');d.style.margin='6px 0';d.style.padding='6px';d.style.background='#051520';d.style.borderRadius='6px';d.innerText=`[AI ${type} generated here]`;el.appendChild(d);}
+
+function addAIAsset(text){const el=document.getElementById('assets');const d=document.createElement('div');d.style.margin='6px 0';d.style.padding='6px';d.style.background='#051520';d.style.borderRadius='6px';d.innerText=text;el.appendChild(d);}
 
 document.getElementById('generatePose').addEventListener('click',()=>generateAI('Pose'));
 document.getElementById('generateLineart').addEventListener('click',()=>generateAI('Lineart'));
