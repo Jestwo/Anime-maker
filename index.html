@@ -13,7 +13,7 @@
     .sidebar, .rightbar{background:#071826;border-radius:8px;padding:12px;overflow:auto}
     .toolbar{display:flex;flex-direction:column;gap:8px}
     .tool{display:flex;gap:8px;align-items:center}
-    button,select,input[type=range]{appearance:none}
+    button,select,input[type=range],input[type=text]{appearance:none}
     button{background:#0b2a3a;border:1px solid rgba(255,255,255,0.04);color:var(--ui);padding:8px 10px;border-radius:6px;cursor:pointer}
     button.active{outline:2px solid rgba(6,182,212,0.14);box-shadow:0 6px 16px rgba(2,6,23,0.6)}
     .canvas-wrap{background:linear-gradient(180deg,#031022 0%, #041426 100%);border-radius:8px;padding:12px;display:flex;flex-direction:column}
@@ -31,6 +31,7 @@
     .help{font-size:13px;opacity:0.9}
     .muted{opacity:0.7;font-size:13px}
     input[type=color]{width:44px;height:34px;padding:0;border:none;background:transparent}
+    input[type=text]{flex:1;padding:6px;border-radius:4px;border:1px solid #0b2a3a;background:#0b2a3a;color:var(--ui)}
   </style>
 </head>
 <body>
@@ -72,9 +73,13 @@
 
         <div style="border-top:1px solid rgba(255,255,255,0.03);padding-top:8px">
           <label class="muted">AI Generators</label>
-          <div class="tool">
-            <button id="generatePose">Generate Pose</button>
-            <button id="generateLineart">Generate Lineart</button>
+          <div class="tool" style="flex-direction:column;gap:4px">
+            <input type="text" id="aiPrompt" placeholder="Enter prompt for pose or lineart" />
+            <input type="text" id="apiKey" placeholder="Paste HuggingFace API Key here" />
+            <div style="display:flex;gap:4px">
+              <button id="generatePose">Generate Pose</button>
+              <button id="generateLineart">Generate Lineart</button>
+            </div>
           </div>
         </div>
 
@@ -117,7 +122,6 @@
   </div>
 
 <script>
-// Brush drawing continuous fix
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 let drawing=false;
@@ -126,22 +130,20 @@ let color='#000000';
 let size=8;
 let history=[];let future=[];
 let panels=[];
-
 ctx.fillStyle='white';
 ctx.fillRect(0,0,canvas.width,canvas.height);
 pushHistory();
 
 function pushHistory(){try{history.push(canvas.toDataURL());if(history.length>50)history.shift();future=[];}catch(e){}}
 
-// Brush/Eraser drawing
+// Continuous Brush/Eraser
 canvas.addEventListener('mousedown',e=>{if(tool==='brush'||tool==='eraser'){drawing=true;ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);}});
-canvas.addEventListener('mousemove',e=>{if(!drawing)return;if(tool==='brush'){ctx.globalCompositeOperation='source-over';ctx.strokeStyle=color;ctx.lineWidth=size;ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);}else if(tool==='eraser'){ctx.globalCompositeOperation='destination-out';ctx.lineWidth=size;ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);ctx.globalCompositeOperation='source-over';}});
-canvas.addEventListener('mouseup',()=>{if(drawing){drawing=false;pushHistory();}});
-canvas.addEventListener('mouseleave',()=>{if(drawing){drawing=false;pushHistory();}});
+canvas.addEventListener('mousemove',e=>{if(!drawing)return;if(tool==='brush'){ctx.globalCompositeOperation='source-over';ctx.strokeStyle=color;ctx.lineWidth=size;ctx.lineCap='round';ctx.lineJoin='round';ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();}else if(tool==='eraser'){ctx.globalCompositeOperation='destination-out';ctx.lineWidth=size;ctx.lineCap='round';ctx.lineJoin='round';ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();ctx.globalCompositeOperation='source-over';}});
+canvas.addEventListener('mouseup',()=>{if(drawing){drawing=false;pushHistory();ctx.beginPath();}});
+canvas.addEventListener('mouseleave',()=>{if(drawing){drawing=false;pushHistory();ctx.beginPath();}});
 
 // Fill tool
 canvas.addEventListener('click',e=>{if(tool==='fill'){floodFill(e.offsetX,e.offsetY,color);}});
-
 function floodFill(x,y,fillColor){const w=canvas.width,h=canvas.height;const img=ctx.getImageData(0,0,w,h);const data=img.data;const idx=(y*w+x)*4;const target=[data[idx],data[idx+1],data[idx+2],data[idx+3]];const newC=hexToRgba(fillColor);if(JSON.stringify(target)===JSON.stringify(newC))return;const stack=[[x,y]];while(stack.length){const[cx,cy]=stack.pop();if(cx<0||cy<0||cx>=w||cy>=h)continue;const i=(cy*w+cx)*4;if(equalPixel(data,i,target)){data[i]=newC[0];data[i+1]=newC[1];data[i+2]=newC[2];data[i+3]=newC[3];stack.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);}}ctx.putImageData(img,0,0);pushHistory();}
 function equalPixel(data,i,target){return data[i]===target[0]&&data[i+1]===target[1]&&data[i+2]===target[2]&&data[i+3]===target[3];}
 function hexToRgba(hex){const h=hex.replace('#','');const bigint=parseInt(h,16);if(h.length===6)return[(bigint>>16)&255,(bigint>>8)&255,bigint&255,255];return[0,0,0,255];}
@@ -161,15 +163,26 @@ document.getElementById('clear').addEventListener('click',()=>{ctx.clearRect(0,0
 
 // Export
 document.getElementById('downloadAll').addEventListener('click',()=>{const a=document.createElement('a');a.href=canvas.toDataURL();a.download='storyboard.png';a.click();});
-
-// Panel export
 document.getElementById('exportPanelPNGs').addEventListener('click',()=>{if(!panels.length)return alert('No panels');panels.forEach((p,i)=>{const tmp=document.createElement('canvas');tmp.width=p.w;tmp.height=p.h;tmp.getContext('2d').drawImage(canvas,p.x,p.y,p.w,p.h,0,0,p.w,p.h);const a=document.createElement('a');a.href=tmp.toDataURL();a.download=`panel-${i+1}.png`;a.click();});});
 
-// AI Pose and Lineart Generator placeholders
+// AI Image Generation (Hugging Face SDXL)
+async function generateAI(type){
+  const prompt = document.getElementById('aiPrompt').value || type;
+  const key = document.getElementById('apiKey').value.trim();
+  if(!key){addAIAsset(type + ' [placeholder]'); return;}
+  try{
+    addAIAsset(type + ' [generating...]');
+    const res = await fetch('https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0',{method:'POST',headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},body:JSON.stringify({inputs:prompt})});
+    const blob = await res.blob();
+    const imgURL = URL.createObjectURL(blob);
+    const img = new Image(); img.onload=()=>{ctx.drawImage(img,0,0,canvas.width,canvas.height); URL.revokeObjectURL(imgURL);}; img.src = imgURL;
+    addAIAsset(type);
+  }catch(e){console.error(e);addAIAsset(type+' [error]');}
+}
 function addAIAsset(type){const el=document.getElementById('assets');const d=document.createElement('div');d.style.margin='6px 0';d.style.padding='6px';d.style.background='#051520';d.style.borderRadius='6px';d.innerText=`[AI ${type} generated here]`;el.appendChild(d);}
 
-document.getElementById('generatePose').addEventListener('click',()=>{addAIAsset('Pose');});
-document.getElementById('generateLineart').addEventListener('click',()=>{addAIAsset('Lineart');});
+document.getElementById('generatePose').addEventListener('click',()=>generateAI('Pose'));
+document.getElementById('generateLineart').addEventListener('click',()=>generateAI('Lineart'));
 </script>
 </body>
 </html>
